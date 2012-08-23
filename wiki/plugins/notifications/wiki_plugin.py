@@ -1,13 +1,11 @@
-from wiki.core import plugins_registry
-from wiki import plugins
+from wiki.core.plugins import registry
+from wiki.core.plugins.base import BasePlugin
 
-class NotifyPlugin(plugins.BasePlugin):
+class NotifyPlugin(BasePlugin):
     
     settings_form = 'wiki.plugins.notifications.forms.SubscriptionForm'
     
     def __init__(self):
-        #print "I WAS LOADED!"
         pass
-    
 
-plugins_registry.register(NotifyPlugin)
+registry.register(NotifyPlugin)

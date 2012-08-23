@@ -1,20 +1,20 @@
 # -*- coding: utf-8 -*-
+from django.contrib import messages
+from django.db import transaction
+from django.db.models import Q
+from django.http import Http404
 from django.shortcuts import redirect, get_object_or_404
 from django.utils.decorators import method_decorator
 from django.utils.translation import ugettext as _
-from django.views.generic.edit import FormView 
-from django.db.models import Q
-
-from wiki.views.mixins import ArticleMixin
-from wiki.decorators import get_article
-from wiki.plugins.attachments import forms
-from wiki.plugins.attachments import models
-from django.contrib import messages
 from django.views.generic.base import TemplateView, View
-from wiki.core.http import send_file
-from django.http import Http404
-from django.db import transaction
+from django.views.generic.edit import FormView
 from django.views.generic.list import ListView
+
+from wiki.core.http import send_file
+from wiki.decorators import get_article, response_forbidden
+from wiki.plugins.attachments import models, settings, forms
+from wiki.views.mixins import ArticleMixin
+
 
 class AttachmentView(ArticleMixin, FormView):
     
@@ -23,7 +23,7 @@ class AttachmentView(ArticleMixin, FormView):
     
     @method_decorator(get_article(can_read=True))
     def dispatch(self, request, article, *args, **kwargs):
-        if request.user.has_perm('wiki.moderator'):
+        if article.can_moderate(request.user):
             self.attachments = models.Attachment.objects.filter(articles=article).order_by('current_revision__deleted', 'original_filename')
         else:
             self.attachments = models.Attachment.objects.active().filter(articles=article)
@@ -32,8 +32,12 @@ class AttachmentView(ArticleMixin, FormView):
         return super(AttachmentView, self).dispatch(request, article, *args, **kwargs)
     
     # WARNING! The below decorator silences other exceptions that may occur!
-    #@transaction.commit_manually
+    @transaction.commit_manually
     def form_valid(self, form):
+        if (self.request.user.is_anonymous() and not settings.ANONYMOUS or 
+            not self.article.can_write(self.request.user)):
+            return response_forbidden(self.request, self.article, self.urlpath)
+            
         try:
             attachment_revision = form.save(commit=False)
             attachment = models.Attachment()
@@ -48,17 +52,18 @@ class AttachmentView(ArticleMixin, FormView):
         except models.IllegalFileExtension, e:
             transaction.rollback()
             messages.error(self.request, _(u'Your file could not be saved: %s') % e)
-        #except Exception:
-        #    transaction.rollback()
-        #    messages.error(self.request, _(u'Your file could not be saved, probably because of a permission error on the web server.'))
+        except Exception:
+            transaction.rollback()
+            messages.error(self.request, _(u'Your file could not be saved, probably because of a permission error on the web server.'))
         
-        #transaction.commit()
+        transaction.commit()
         return redirect("wiki:attachments_index", path=self.urlpath.path, article_id=self.article.id)
     
     def get_context_data(self, **kwargs):
         kwargs['attachments'] = self.attachments
         kwargs['search_form'] = forms.SearchForm()
         kwargs['selected_tab'] = 'attachments'
+        kwargs['anonymous_disallowed'] = self.request.user.is_anonymous() and not settings.ANONYMOUS
         return super(AttachmentView, self).get_context_data(**kwargs)
 
 
@@ -68,7 +73,7 @@ class AttachmentHistoryView(ArticleMixin, TemplateView):
     
     @method_decorator(get_article(can_read=True))
     def dispatch(self, request, article, attachment_id, *args, **kwargs):
-        if request.user.has_perm('wiki.moderator'):
+        if article.can_moderate(request.user):
             self.attachment = get_object_or_404(models.Attachment, id=attachment_id, articles=article)
         else:
             self.attachment = get_object_or_404(models.Attachment.objects.active(), id=attachment_id, articles=article)
@@ -86,22 +91,36 @@ class AttachmentReplaceView(ArticleMixin, FormView):
     form_class = forms.AttachmentForm
     template_name="wiki/plugins/attachments/replace.html"
     
-    @method_decorator(get_article(can_read=True))
+    @method_decorator(get_article(can_write=True))
     def dispatch(self, request, article, attachment_id, *args, **kwargs):
-        self.attachment = get_object_or_404(models.Attachment.objects.active(), id=attachment_id, articles=article)
+        if self.request.user.is_anonymous() and not settings.ANONYMOUS:
+            return response_forbidden(request, article, kwargs.get('urlpath', None))
+        if article.can_moderate(request.user):
+            self.attachment = get_object_or_404(models.Attachment, id=attachment_id, articles=article)
+        else:
+            self.attachment = get_object_or_404(models.Attachment.objects.active(), id=attachment_id, articles=article)
         return super(AttachmentReplaceView, self).dispatch(request, article, *args, **kwargs)
     
     def form_valid(self, form):
         
-        attachment_revision = form.save(commit=False)
-        attachment_revision.attachment = self.attachment
-        attachment_revision.set_from_request(self.request)
-        attachment_revision.previous_revision = self.attachment.current_revision
-        attachment_revision.save()
-        self.attachment.current_revision = attachment_revision
-        self.attachment.save()
+        try:
+            attachment_revision = form.save(commit=False)
+            attachment_revision.attachment = self.attachment
+            attachment_revision.set_from_request(self.request)
+            attachment_revision.previous_revision = self.attachment.current_revision
+            attachment_revision.save()
+            self.attachment.current_revision = attachment_revision
+            self.attachment.save()
+            messages.success(self.request, _(u'%s uploaded and replaces old attachment.') % attachment_revision.get_filename())
+        except models.IllegalFileExtension, e:
+            messages.error(self.request, _(u'Your file could not be saved: %s') % e)
+            return redirect("wiki:attachments_replace", attachment_id=self.attachment.id,
+                            path=self.urlpath.path, article_id=self.article.id)
+        except Exception:
+            messages.error(self.request, _(u'Your file could not be saved, probably because of a permission error on the web server.'))
+            return redirect("wiki:attachments_replace", attachment_id=self.attachment.id,
+                            path=self.urlpath.path, article_id=self.article.id)
         
-        messages.success(self.request, _(u'%s uploaded and replaces old attachment.') % attachment_revision.get_filename())
         return redirect("wiki:attachments_index", path=self.urlpath.path, article_id=self.article.id)
     
     def get_form(self, form_class):
@@ -121,7 +140,10 @@ class AttachmentDownloadView(ArticleMixin, View):
     
     @method_decorator(get_article(can_read=True))
     def dispatch(self, request, article, attachment_id, *args, **kwargs):
-        self.attachment = get_object_or_404(models.Attachment, id=attachment_id, articles=article)
+        if article.can_moderate(request.user):
+            self.attachment = get_object_or_404(models.Attachment, id=attachment_id, articles=article)
+        else:
+            self.attachment = get_object_or_404(models.Attachment.objects.active(), id=attachment_id, articles=article)
         revision_id = kwargs.get('revision_id', None)
         if revision_id:
             self.revision = get_object_or_404(models.AttachmentRevision, id=revision_id, attachment__articles=article)
@@ -131,8 +153,11 @@ class AttachmentDownloadView(ArticleMixin, View):
 
     def get(self, request, *args, **kwargs):
         if self.revision:
-            return send_file(request, self.revision.file.path, 
-                             self.revision.created, self.attachment.original_filename)
+            try:
+                return send_file(request, self.revision.file.path, 
+                                 self.revision.created, self.attachment.original_filename)
+            except OSError:
+                pass
         raise Http404
     
 class AttachmentChangeRevisionView(ArticleMixin, View):
@@ -142,7 +167,7 @@ class AttachmentChangeRevisionView(ArticleMixin, View):
     
     @method_decorator(get_article(can_write=True))
     def dispatch(self, request, article, attachment_id, revision_id, *args, **kwargs):
-        if request.user.has_perm('wiki.moderator'):
+        if article.can_moderate(request.user):
             self.attachment = get_object_or_404(models.Attachment, id=attachment_id, articles=article)
         else:
             self.attachment = get_object_or_404(models.Attachment.objects.active(), id=attachment_id, articles=article)
@@ -168,8 +193,9 @@ class AttachmentAddView(ArticleMixin, View):
         return super(AttachmentAddView, self).dispatch(request, article, *args, **kwargs)
     
     def post(self, request, *args, **kwargs):
-        self.attachment.articles.add(self.article)
-        self.attachment.save()
+        if self.attachment.articles.filter(id=self.article.id):
+            self.attachment.articles.add(self.article)
+            self.attachment.save()
         messages.success(self.request, _(u'Added a reference to "%(att)s" from "%(art)s".') % 
                          {'att': self.attachment.original_filename,
                           'art': self.article.current_revision.title})        
@@ -183,10 +209,9 @@ class AttachmentDeleteView(ArticleMixin, FormView):
     
     @method_decorator(get_article(can_write=True))
     def dispatch(self, request, article, attachment_id, *args, **kwargs):
-        if request.user.has_perm("wiki.moderator"):
-            self.attachment = get_object_or_404(models.Attachment, id=attachment_id, articles=article)
-        else:
-            self.attachment = get_object_or_404(models.Attachment.objects.active(), id=attachment_id, articles=article)
+        self.attachment = get_object_or_404(models.Attachment, id=attachment_id, articles=article)
+        if not self.attachment.can_delete(request.user):
+            return response_forbidden(request, article, kwargs.get('urlpath', None))
         return super(AttachmentDeleteView, self).dispatch(request, article, *args, **kwargs)
     
     def form_valid(self, form):
@@ -228,13 +253,12 @@ class AttachmentSearchView(ArticleMixin, ListView):
     def get_queryset(self):
         self.query = self.request.GET.get('query', None)
         if not self.query:
-            qs = models.Attachment.objects.active().get_empty_query_set()
+            qs = models.Attachment.objects.get_empty_query_set()
         else:
             qs = models.Attachment.objects.active().can_read(self.request.user)
             qs = qs.filter(Q(original_filename__contains=self.query) |
                            Q(current_revision__description__contains=self.query) |
                            Q(article__current_revision__title__contains=self.query))
-        qs = qs.exclude(articles=self.article)
         return qs
     
     def get_context_data(self, **kwargs):

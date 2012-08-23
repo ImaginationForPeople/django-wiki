@@ -6,7 +6,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.utils.safestring import mark_safe
 
 from wiki.plugins.notifications import ARTICLE_EDIT
-from wiki.plugins import PluginSettingsFormMixin
+from wiki.core.plugins.base import PluginSettingsFormMixin
 
 class SubscriptionForm(PluginSettingsFormMixin, forms.Form):
     
@@ -14,13 +14,17 @@ class SubscriptionForm(PluginSettingsFormMixin, forms.Form):
     settings_order = 1
     settings_write_access = False
     
-    def __init__(self, article, user, *args, **kwargs):
+    edit = forms.BooleanField(required=False, label=_(u'When this article is edited'))
+    edit_email = forms.BooleanField(required=False, label=_(u'Also receive emails about article edits'),
+                                    widget=forms.CheckboxInput(attrs={'onclick': mark_safe("$('#id_edit').attr('checked', $(this).is(':checked'));")}))
+    
+    def __init__(self, article, request, *args, **kwargs):
         # This has to be here to avoid unresolved imports in wiki_plugins
-        import models
+        from wiki.plugins.notifications import models
         self.article = article
-        self.user = user
+        self.user = request.user
         initial = kwargs.pop('initial', None)
-        self.settings = Settings.objects.get_or_create(user=user,)[0]
+        self.settings = Settings.objects.get_or_create(user=request.user,)[0]
         self.notification_type = NotificationType.objects.get_or_create(key=ARTICLE_EDIT,
                                                                         content_type=ContentType.objects.get_for_model(article))[0]
         self.edit_notifications=models.ArticleSubscription.objects.filter(settings=self.settings, 
@@ -31,10 +35,6 @@ class SubscriptionForm(PluginSettingsFormMixin, forms.Form):
                        'edit_email': bool(self.edit_notifications.filter(send_emails=True))}
         kwargs['initial'] = initial
         super(SubscriptionForm, self).__init__(*args, **kwargs)
-    
-    edit = forms.BooleanField(required=False, label=_(u'When this article is edited'))
-    edit_email = forms.BooleanField(required=False, label=_(u'Also receive emails about article edits'),
-                                    widget=forms.CheckboxInput(attrs={'onclick': mark_safe("$('#id_edit').attr('checked', $(this).is(':checked'));")}))
     
     def get_usermessage(self):
         if self.changed_data:

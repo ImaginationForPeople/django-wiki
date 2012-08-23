@@ -1,43 +1,56 @@
-Not implemented - will be ASAP
+Roadmap to RC1...
 ==============================
 
- * Permission system in settings tab **Done**
+Unfinished
+----------
+
  * Notification system **Almost done** (email notifications)
- * Simple user account handling: login/register etc. **Done**
- * Implement notifications, revision log messages and user messages thoroughly
- * Attachment plugin **Done**
- * Image plugin
+ * Circuit Editor plugin
  * Example plugin
- * Bot editing detection. Don't let anyone edit more than once every other minute.
- * Article deletion **Done**
+ * Spam protection / Bot editing detection. Don't let anyone edit more than once every other minute.
  * Key-value meta data
- * Index views for urlpaths
  * Searching
- * South migrations **Soon**
- * View source for read-only articles + locked status
- * Global moderator permission **Almost done** (need to add grant form for users with *grant* permissions)
- * Are you sure you wanna leave this page?
- * Special view for deleted articles w/ restore button
+ * "Are you sure you want to leave this page" confirmation for Edit page.
+ * Finish all class-based views
+ * Embeddable article template tag
+ * "Fix Wiki URL bug in the footnotes plugin for python-markdown" ?
+ * CodeMirror to be distributed with default setup
  
-Ideas
-=====
-
- * Build TOCs and use bootstrap scrollspy
- * Notification system should be it's own separate app
- * Statistics page for wiki owners
- * Auto-merge for conflicting concurrent revisions **DONE**
- * Add revision conflict detection for concurrent editing **DONE**
- * Make a comments plugin for commenting inline
-
-Management script
-=================
+### Management script
 
  * Cleanup deleted Image's image files
  * Cleanup attachments
  * Cleanup revisions + plugin revisions
  * django_notify: send out email notifications
 
+Done
+----
+
+ * Implement notifications, revision log messages and user messages thoroughly **Pretty much done**
+ * View source for read-only articles + locked status **Done**
+ * Index views for urlpaths **Done**
+ * Permission system in settings tab **Done**
+ * Special view for deleted articles w/ restore button **Done**
+ * Article deletion **Done**
+ * Image plugin **Done**
+ * Attachment plugin **Done**
+ * Simple user account handling: login/register etc. **Done**
+ * South migrations **Done**
+ * Custom storage engine for attachments **Done**
+ * Handling WikiLinks and detecting broken links in markdown extension **Done**
+ 
+Ideas
+-----
+
+ * Build menus of hierarchies and use bootstrap scrollspy. Add through plugin.
+ * Notification system should be it's own separate app
+ * Statistics page for wiki owners
+ * Table plugin: Quickly add a row of data to an existing table and sort data.
+ * Auto-merge for conflicting concurrent revisions **DONE**
+ * Add revision conflict detection for concurrent editing **DONE**
+ * Make a comments plugin for commenting inline
+
 Postponed
-=================
+---------
 
 * Make dependency on django_notify optional

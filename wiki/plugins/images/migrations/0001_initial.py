@@ -61,7 +61,6 @@ class Migration(SchemaMigration):
         },
         'images.image': {
             'Meta': {'object_name': 'Image', '_ormbases': ['wiki.RevisionPlugin']},
-            'caption': ('django.db.models.fields.CharField', [], {'max_length': '2056', 'null': 'True', 'blank': 'True'}),
             'image': ('django.db.models.fields.files.ImageField', [], {'max_length': '100'}),
             'revisionplugin_ptr': ('django.db.models.fields.related.OneToOneField', [], {'to': "orm['wiki.RevisionPlugin']", 'unique': 'True', 'primary_key': 'True'})
         },

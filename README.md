@@ -1,16 +1,23 @@
 django-wiki
 ===========
 
-*Last update: 2012-08-12*
+*Last update: 2012-08-22*
 
 Demo here, sign up for an account to see the notification system.
 
 [wiki.overtag.dk](http://wiki.overtag.dk)
 
-NB!! *THIS IS A WORK IN PROGRESS*
+NB!! *THIS IS A WORK IN PROGR...*
 ---------------------------------
 
-This is where it all begins. In *1* week we should have a wiki system appealing to any kind of Django developer out there. Here is the manifest (so far):
+Currently, the whole API is subject to change. That means, if you use the wiki, you should use it *as it is* and not access internals or override templates or write plugins... **yet!** But the games will soon begin, and Django South migrations are available.
+
+Please refer to the [TODO](https://github.com/benjaoming/django-wiki/blob/master/TODO.md) for a detailed status or the Issue list.
+
+Manifesto
+---------
+
+This is where it all begins. In *less than 1 week* we should have a wiki system appealing to any kind of Django developer out there. Here is the manifest (so far):
 
  * **Be pluggable and light-weight.** Don't integrate optional features in the core.
  * **Be open.** Make an extension API that allows the ecology of the wiki to grow. After all, Wikipedia consists of some [680 extensions](http://svn.wikimedia.org/viewvc/mediawiki/trunk/extensions/) written for MediaWiki.
@@ -67,6 +74,14 @@ Please use these function calls rather than writing your own include() call - th
 
 The above line puts the wiki in */* so it's important to put it at the end of your urlconf. You can also put it in */wiki* by putting `'^wiki/'` as the pattern.
 
+### Settings
+
+For now, look in [wiki/conf/settings.py](wiki/conf/settings.py) to see a list of available settings.
+
+### Other tips
+
+ 1. **Account handling:** There are simple views that handle login, logout and signup. They are on by default. Make sure to set settings.LOGIN_URL to point to your login page as many wiki views may redirect to a login page.
+
 Plugins
 ------------
 
@@ -107,6 +122,7 @@ So far the dependencies are:
  * [Markdown>=2.2.0](https://github.com/waylan/Python-Markdown)
  * [django-mptt>=0.5](https://github.com/django-mptt/django-mptt)
  * [django-sekizai](https://github.com/ojii/django-sekizai/)
+ * [sorl-thumbnail](https://github.com/sorl/sorl-thumbnail)
 
 Development
 ------------

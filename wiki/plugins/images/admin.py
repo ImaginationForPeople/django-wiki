@@ -1,12 +1,29 @@
 from django.contrib import admin
-
+from django import forms
 import models
 
-class ImageAdmin(admin.ModelAdmin):
+class ImageForm(forms.ModelForm):
+
+    class Meta:
+        model = models.Image
+
+    def __init__(self, *args, **kwargs):
+        super(ImageForm, self).__init__(*args, **kwargs)
+        if self.instance.pk:
+            revisions = models.ImageRevision.objects.filter(plugin=self.instance)
+            self.fields['current_revision'].queryset = revisions
+        else:
+            self.fields['current_revision'].queryset = models.ImageRevision.objects.get_empty_query_set()
+            self.fields['current_revision'].widget = forms.HiddenInput()
+
+
+class ImageRevisionInline(admin.TabularInline):
+    model = models.ImageRevision
+    extra = 1
+    fields = ('image', 'locked', 'deleted')
     
-    # Do not let images be added in the admin. An image can only be added
-    # from the article admin due to the automatic revision system.
-    def has_add_permission(self, request):
-        return False
+class ImageAdmin(admin.ModelAdmin):
+    form = ImageForm
+    inlines = (ImageRevisionInline,)
 
 admin.site.register(models.Image, ImageAdmin)

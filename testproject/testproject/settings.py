@@ -9,6 +9,14 @@ ADMINS = (
     # ('Your Name', 'your_email@example.com'),
 )
 
+#from django.core.urlresolvers import reverse_lazy
+#LOGIN_REDIRECT_URL = reverse_lazy('wiki:get', kwargs={'path': ''})
+
+# This forces the wiki login view to redirect to the referer...
+LOGIN_REDIRECT_URL = None
+LOGIN_URL = '/_accounts/login/'
+LOGOUT_URL = '/_accounts/logout/'
+
 MANAGERS = ADMINS
 
 DATABASES = {
@@ -98,7 +106,10 @@ INSTALLED_APPS = (
     'south',
     'sekizai',
     'django_notify',
+    'sorl.thumbnail',
     'wiki',
+    'wiki.plugins.help',
+    'wiki.plugins.links',
     'wiki.plugins.images',
     'wiki.plugins.attachments',
     'wiki.plugins.notifications',
@@ -133,3 +144,5 @@ LOGGING = {
         },
     }
 }
+
+WIKI_ANONYMOUS_WRITE = True

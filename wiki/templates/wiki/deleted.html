@@ -19,11 +19,11 @@
   
   <div class="row-fluid">
   
-  {% if not article.current_revision.locked or user|is_moderator %}
+  {% if not article.current_revision.locked or article|can_delete:user %}
     <div class="span6">
       <div class="well">
         <h2>{% trans "Restore" %}</h2>
-        <p>{% trans "You may restore this article and its children by clicking restore. Note that this restores ALL children." %}</p>
+        <p>{% trans "You may restore this article and its children by clicking restore." %}</p>
         <p>
           <a href="?restore=1" class="btn">
             <span class="icon-repeat"></span>
@@ -34,7 +34,7 @@
     </div>
   {% endif %}
   
-  {% if user|is_moderator %}
+  {% if article|can_moderate:user %}
     <div class="span6">
       <div class="well">
         <h2>{% trans "Purge deletion" %}</h2>

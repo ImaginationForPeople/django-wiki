@@ -1,7 +1,7 @@
 from django.db import models
 from django.utils.translation import ugettext_lazy as _
 
-import settings
+from . import settings
 
 from wiki import managers
 from wiki.models.pluginbase import ReusablePlugin
@@ -23,9 +23,19 @@ class Attachment(ReusablePlugin):
     
     original_filename = models.CharField(max_length=256, verbose_name=_(u'original filename'), blank=True, null=True)
 
+    def can_write(self, **kwargs):
+        user = kwargs.get('user', None)
+        if not settings.ANONYMOUS and (not user or user.is_anonymous()):
+            return False
+        return ReusablePlugin.can_write(self, **kwargs)
+    
+    def can_delete(self, user):
+        return self.can_write(user=user)
+    
     class Meta:
         verbose_name = _(u'attachment')
         verbose_name_plural = _(u'attachments')
+        app_label = settings.APP_LABEL 
     
     def __unicode__(self):
         return "%s: %s" % (self.article.current_revision.title, self.original_filename)    
@@ -66,7 +76,8 @@ class AttachmentRevision(BaseRevisionMixin, models.Model):
     attachment = models.ForeignKey('Attachment')
 
     file = models.FileField(upload_to=upload_path, #@ReservedAssignment
-                            verbose_name=_(u'file'))
+                            verbose_name=_(u'file'),
+                            storage=settings.STORAGE_BACKEND)
         
     description = models.TextField(blank=True)
     
@@ -75,6 +86,7 @@ class AttachmentRevision(BaseRevisionMixin, models.Model):
         verbose_name_plural = _(u'attachment revisions')
         ordering = ('created',)
         get_latest_by = ('revision_number',)
+        app_label = settings.APP_LABEL
         
     def get_filename(self):
         """Used to retrieve the filename of a revision.
@@ -90,6 +102,8 @@ class AttachmentRevision(BaseRevisionMixin, models.Model):
         """Used to retrieve the file size and not cause exceptions."""
         try:
             return self.file.size
+        except OSError:
+            return None
         except ValueError:
             return None
     

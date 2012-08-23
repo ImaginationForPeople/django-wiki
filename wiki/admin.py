@@ -4,11 +4,8 @@ from django.utils.translation import ugettext_lazy as _
 from mptt.admin import MPTTModelAdmin
 
 from django import forms
-from django.forms.widgets import HiddenInput
-from django.core.urlresolvers import get_callable
-
 import models
-from conf import settings
+import editors
 
 class ArticleObjectAdmin(GenericTabularInline):
     model = models.ArticleForObject
@@ -22,15 +19,15 @@ class ArticleRevisionForm(forms.ModelForm):
         
     def __init__(self, *args, **kwargs):
         super(ArticleRevisionForm, self).__init__(*args, **kwargs)
-        EditorClass = get_callable(settings.EDITOR)
-        editor = EditorClass(instance=self.instance)
+        EditorClass = editors.getEditorClass()
+        editor = editors.getEditor()
         self.fields['content'].widget = editor.get_admin_widget()
 
 class ArticleRevisionAdmin(admin.ModelAdmin):
     form = ArticleRevisionForm
     class Media:
-        js = get_callable(settings.EDITOR).AdminMedia.js
-        css = get_callable(settings.EDITOR).AdminMedia.css
+        js = editors.getEditorClass().AdminMedia.js
+        css = editors.getEditorClass().AdminMedia.css
 
 class ArticleRevisionInline(admin.TabularInline):
     model = models.ArticleRevision
@@ -40,8 +37,8 @@ class ArticleRevisionInline(admin.TabularInline):
     fields = ('content', 'title',  'deleted', 'locked',)
     
     class Media:
-        js = get_callable(settings.EDITOR).AdminMedia.js
-        css = get_callable(settings.EDITOR).AdminMedia.css
+        js = editors.getEditorClass().AdminMedia.js
+        css = editors.getEditorClass().AdminMedia.css
 
 class ArticleForm(forms.ModelForm):
 
@@ -55,7 +52,7 @@ class ArticleForm(forms.ModelForm):
             self.fields['current_revision'].queryset = revisions
         else:
             self.fields['current_revision'].queryset = models.ArticleRevision.objects.get_empty_query_set()
-            self.fields['current_revision'].widget = HiddenInput()
+            self.fields['current_revision'].widget = forms.HiddenInput()
 
 class ArticleAdmin(admin.ModelAdmin):
     inlines = [ArticleRevisionInline]

@@ -6,18 +6,23 @@ from django.db.models import signals
 from django_notify import notify
 from django_notify.models import Subscription
 
-from wiki.plugins.notifications import ARTICLE_EDIT
-
 from wiki import models as wiki_models
-from wiki.core import plugins_registry
+from wiki.models.pluginbase import ArticlePlugin
+from wiki.core.plugins import registry
+from wiki.plugins.notifications import ARTICLE_EDIT #TODO: Is this bad practice?
+from wiki.plugins.notifications import settings
 
-class ArticleSubscription(wiki_models.pluginbase.ArticlePlugin, Subscription):
+class ArticleSubscription(ArticlePlugin, Subscription):
     
     def __unicode__(self):
         return (_(u"%(user)s subscribing to %(article)s (%(type)s)") % 
                 {'user': self.settings.user.username,
                  'article': self.article.current_revision.title,
                  'type': self.notification_type.label})
+    
+    class Meta:
+        app_label = settings.APP_LABEL
+    
 
 def default_url(article, urlpath=None):
     try:
@@ -51,11 +56,13 @@ signals.post_save.connect(post_article_revision_save, sender=wiki_models.Article
 ##################################################
 # NOTIFICATIONS FOR PLUGINS
 ##################################################
-for plugin in plugins_registry.get_plugins():
+for plugin in registry.get_plugins():
     
     notifications = getattr(plugin, 'notifications', [])
     for notification_dict in notifications:
         def plugin_notification(instance, **kwargs):
+            if notification_dict.get('ignore', lambda x: False)(instance):
+                return
             if kwargs.get('created', False) == notification_dict.get('created', True):
                 url = None
                 if notification_dict.has_key('get_url'):

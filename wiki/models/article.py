@@ -7,7 +7,8 @@ from django.utils.safestring import mark_safe
 from django.utils.translation import ugettext_lazy as _
 
 from wiki.conf import settings
-from wiki.core import article_markdown, plugins_registry
+from wiki.core import article_markdown, permissions
+from wiki.core.plugins import registry as plugin_registry
 from wiki import managers
 from mptt.models import MPTTModel
 
@@ -26,7 +27,7 @@ class Article(models.Model):
                                     help_text=_(u'Article properties last modified'))
 
     owner = models.ForeignKey(User, verbose_name=_('owner'),
-                              blank=True, null=True,
+                              blank=True, null=True, related_name='owned_articles',
                               help_text=_(u'The owner of the article, usually the creator. The owner always has both read and write access.'),)
     
     group = models.ForeignKey(Group, verbose_name=_('group'),
@@ -38,69 +39,96 @@ class Article(models.Model):
     other_read = models.BooleanField(default=True, verbose_name=_(u'others read access'))
     other_write = models.BooleanField(default=True, verbose_name=_(u'others write access'))
     
-    def can_read(self, user=None, group=None):
-        if self.other_read:
+    # TODO: Do not use kwargs, it can lead to dangerous situations with bad
+    # permission checking patterns. Also, since there are no other keywords,
+    # it doesn't make much sense.
+    def can_read(self, user=None):
+        # Deny reading access to deleted articles if user has no delete access
+        if self.current_revision and self.current_revision.deleted and not self.can_delete(user):
+            return False
+        
+        # Check access for other users...
+        if user.is_anonymous() and not settings.ANONYMOUS:
+            return False
+        elif self.other_read:
             return True
+        elif user.is_anonymous():
+            return  False
         if user == self.owner:
             return True
         if self.group_read:
-            if group == self.group:
+            if self.group and user.groups.filter(id=self.group.id):
                 return True
-            if self.group and user and user.groups.filter(group=group):
-                return True
-        if user and user.has_perm('wiki_moderator'):
+        if self.can_moderate(user):
             return True
         return False
     
-    def can_write(self, user=None, group=None):
-        if self.other_write:
+    def can_write(self, user=None):
+        # Check access for other users...
+        if user.is_anonymous() and not settings.ANONYMOUS_WRITE:
+            return False
+        elif self.other_write:
             return True
+        elif user.is_anonymous():
+            return  False
         if user == self.owner:
             return True
         if self.group_write:
-            if group == self.group:
+            if self.group and user and user.groups.filter(id=self.group.id):
                 return True
-            if self.group and user and user.groups.filter(group=group):
-                return True
-        if user and user.has_perm('wiki_moderator'):
+        if self.can_moderate(user):
             return True
         return False
     
-    def decendant_objects(self):
+    def can_delete(self, user):
+        return permissions.can_delete(self, user)
+    def can_moderate(self, user):
+        return permissions.can_moderate(self, user)
+    def can_assign(self, user):
+        return permissions.can_assign(self, user)
+    
+    def descendant_objects(self):
         """NB! This generator is expensive, so use it with care!!"""
         for obj in self.articleforobject_set.filter(is_mptt=True):
-            for decendant in obj.content_object.get_decendants():
-                yield decendant
+            for descendant in obj.content_object.get_descendants():
+                yield descendant
     
-    def get_children(self, max_num=None, **kwargs):
+    def get_children(self, max_num=None, user_can_read=None, **kwargs):
         """NB! This generator is expensive, so use it with care!!"""
         cnt = 0
         for obj in self.articleforobject_set.filter(is_mptt=True):
-            for child in obj.content_object.get_children().filter(**kwargs):
+            if user_can_read:
+                objects = obj.content_object.get_children().filter(**kwargs).can_read(user_can_read)
+            else:
+                objects = obj.content_object.get_children().filter(**kwargs)
+            for child in objects.order_by('articles__article__current_revision__title'):
                 cnt += 1
                 if max_num and cnt > max_num: return
                 yield child
 
-    # All recursive permission methods will use decendant_objects to access
+    # All recursive permission methods will use descendant_objects to access
     # generic relations and check if they are using MPTT and have INHERIT_PERMISSIONS=True
     def set_permissions_recursive(self):
-        for decendant in self.decendant_objects():
-            if decendant.INHERIT_PERMISSIONS:
-                decendant.group_read = self.group_read
-                decendant.group_write = self.group_write
-                decendant.other_read = self.other_read
-                decendant.other_write = self.other_write
+        for descendant in self.descendant_objects():
+            if descendant.INHERIT_PERMISSIONS:
+                descendant.group_read = self.group_read
+                descendant.group_write = self.group_write
+                descendant.other_read = self.other_read
+                descendant.other_write = self.other_write
+                descendant.save()
     
     def set_group_recursive(self):
-        for decendant in self.decendant_objects():
-            if decendant.INHERIT_PERMISSIONS:
-                decendant.group = self.group
+        for descendant in self.descendant_objects():
+            if descendant.INHERIT_PERMISSIONS:
+                descendant.group = self.group
+                descendant.save()
 
     def set_owner_recursive(self):
-        for decendant in self.decendant_objects():
-            if decendant.INHERIT_PERMISSIONS:
-                decendant.owner = self.owner
-
+        for descendant in self.descendant_objects():
+            if descendant.INHERIT_PERMISSIONS:
+                descendant.owner = self.owner
+                descendant.save()
+    
     def add_revision(self, new_revision, save=True):
         """
         Sets the properties of a revision and ensures its the current
@@ -142,7 +170,7 @@ class Article(models.Model):
     class Meta:
         app_label = settings.APP_LABEL
         permissions = (
-            ("moderator", "Can edit all articles and lock/unlock/restore"),
+            ("moderate", "Can edit all articles and lock/unlock/restore"),
             ("assign", "Can change ownership of any article"),
             ("grant", "Can assign permissions to other users"),
         )
@@ -154,11 +182,15 @@ class Article(models.Model):
             content = preview_content
         else:
             content = self.current_revision.content
-        extensions = plugins_registry.get_markdown_extensions()
+        extensions = plugin_registry.get_markdown_extensions()
+        extensions += settings.MARKDOWN_EXTENSIONS
         return mark_safe(article_markdown(content, self, extensions=extensions))
         
     
 class ArticleForObject(models.Model):
+    
+    objects = managers.ArticleFkManager()
+    
     article = models.ForeignKey('Article', on_delete=models.CASCADE)
     # Same as django.contrib.comments
     content_type   = models.ForeignKey(ContentType,
@@ -225,13 +257,14 @@ class ArticleRevision(BaseRevisionMixin, models.Model):
     # the last used revision...
     title = models.CharField(max_length=512, verbose_name=_(u'article title'), 
                              null=False, blank=False, help_text=_(u'Each revision contains a title field that must be filled out, even if the title has not changed'))
-
+    
+    # TODO:
     # Allow a revision to redirect to another *article*. This 
     # way, we can redirects and still maintain old content.
-    redirect = models.ForeignKey('Article', null=True, blank=True,
-                                 verbose_name=_(u'redirect'),
-                                 help_text=_(u'If set, the article will redirect to the contents of another article.'),
-                                 related_name='redirect_set')
+    #redirect = models.ForeignKey('Article', null=True, blank=True,
+    #                             verbose_name=_(u'redirect'),
+    #                             help_text=_(u'If set, the article will redirect to the contents of another article.'),
+    #                             related_name='redirect_set')
     
     def __unicode__(self):
         return "%s (%d)" % (self.title, self.revision_number)
@@ -247,7 +280,6 @@ class ArticleRevision(BaseRevisionMixin, models.Model):
         self.title = predecessor.title
         self.deleted = predecessor.deleted
         self.locked = predecessor.locked
-        self.redirect = predecessor.redirect
     
     def save(self, *args, **kwargs):
         if (not self.id and
